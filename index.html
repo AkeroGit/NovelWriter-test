@@ -277,13 +277,13 @@
               <span class="agent-status" id="agent-status"></span>
               <span>AI Agent</span>
             </div>
-            <select class="agent-mode-select" id="agent-mode-select">
-              <option value="auto"> 🌀 Auto</option>
-              <option value="quick"> ⚡Quick</option>
-              <option value="planning"> 📋 Planning</option>
-              <option value="chatty"> 💬 Chatty</option>
-              <option value="brainstorm">💡 Brainstorm</option>
-            </select>
+            <div class="agent-mode-dropdown" id="agent-mode-dropdown">
+              <button class="agent-mode-trigger" id="agent-mode-trigger" type="button" title="Select agent mode">
+                <span id="agent-mode-label">Auto</span>
+                <span class="agent-mode-caret">v</span>
+              </button>
+              <div class="agent-mode-menu hidden" id="agent-mode-menu"></div>
+            </div>
           </div>
           <div class="agent-conversations-bar">
             <button class="btn btn-sm" id="agent-new-conversation" title="New Conversation">
@@ -1060,6 +1060,37 @@
     </div>
   </div>
 
+  <!-- Custom Agent Modal -->
+  <div class="modal" id="custom-agent-modal">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content custom-agent-modal-content">
+      <div class="modal-header">
+        <h2 id="custom-agent-title">Add Custom Agent</h2>
+        <button class="icon-btn" id="close-custom-agent" title="Close">x</button>
+      </div>
+      <div class="modal-body custom-agent-form">
+        <label class="custom-agent-field">
+          <span>Agent name</span>
+          <input type="text" id="custom-agent-name" placeholder="Example: Continuity Hawk" autocomplete="off">
+        </label>
+        <label class="custom-agent-field">
+          <span>Agent prompt</span>
+          <textarea id="custom-agent-prompt" rows="8"></textarea>
+        </label>
+        <div class="custom-agent-reference" id="custom-agent-reference">
+          <div class="custom-agent-reference-header">
+            <span>Reference prompt: <strong id="custom-agent-reference-title"></strong></span>
+            <button class="custom-agent-reference-next" id="custom-agent-reference-next" type="button" title="Show next reference">&gt;</button>
+          </div>
+          <p id="custom-agent-reference-text"></p>
+        </div>
+      </div>
+      <div class="modal-footer custom-agent-footer">
+        <button class="btn btn-secondary" id="custom-agent-cancel">Cancel</button>
+        <button class="btn btn-primary" id="custom-agent-save">Save Agent</button>
+      </div>
+    </div>
+  </div>
   <!-- Polyfill for LAN hosting (must run before module) -->
   <script>
     // crypto.randomUUID requires Secure Context (HTTPS/localhost)

@@ -11,6 +11,7 @@ import { Toolbar } from './editor/Toolbar.js';
 import { Settings } from './settings/ThemeSettings.js';
 import { AIService } from './ai/AIService.js';
 import { APIConfig } from './ai/APIConfig.js';
+import { CustomAgentManager } from './ai/CustomAgentManager.js';
 import { AgentPanel } from './ai/AgentPanel.js';
 import { ImageService } from './ai/ImageService.js';
 import { StoryPulse } from './analytics/StoryPulse.js';
@@ -33,6 +34,7 @@ class NovelWriterApp {
     this.currentContext = null;
 
     // Initialize modules
+    this.customAgentManager = new CustomAgentManager(this);
     this.treeNav = new TreeNav(this);
     this.toolbar = new Toolbar(this);
     this.settings = new Settings(this);
@@ -920,19 +922,19 @@ class NovelWriterApp {
   }
 
   renderSuggestions(editor, scene) {
-    const suggestions = scene.suggestions.items;
-    const annotatedText = scene.suggestions.annotatedText;
+    const annotatedText = this.normalizeSuggestionTags(scene.suggestions.annotatedText || '');
     const typeLabels = {
       expand: 'Expand', shorten: 'Shorten', dialogue: 'Dialogue',
       sensory: 'Sensory', grammar: 'Grammar', prose: 'Prose', review: 'Review'
     };
+    const suggestionLabel = scene.suggestions.typeLabel || typeLabels[scene.suggestions.type] || 'Suggestions';
 
     // Add header showing suggestion mode (non-destructive - prepended)
     const header = document.createElement('div');
     header.className = 'suggestion-view-header';
     header.innerHTML = `
-      <span class="suggestion-type">🤖 ${typeLabels[scene.suggestions.type] || 'Suggestions'} Mode</span>
-      <span class="suggestion-count">${suggestions.length} inline suggestion${suggestions.length > 1 ? 's' : ''}</span>
+      <span class="suggestion-type">🤖 ${suggestionLabel} Mode</span>
+      <span class="suggestion-count">Scanning suggestions...</span>
     `;
     editor.insertBefore(header, editor.firstChild);
 
@@ -958,6 +960,14 @@ class NovelWriterApp {
       }
     }
 
+    const visibleSuggestions = this.renumberVisibleInlineSuggestions(editor);
+    scene.suggestions.items = visibleSuggestions;
+
+    const countEl = header.querySelector('.suggestion-count');
+    if (countEl) {
+      countEl.textContent = `${visibleSuggestions.length} inline suggestion${visibleSuggestions.length !== 1 ? 's' : ''}`;
+    }
+
     // Bind right-click handlers for inline suggestion blocks
     editor.querySelectorAll('.suggestion-inline').forEach(block => {
       block.addEventListener('contextmenu', (e) => {
@@ -974,7 +984,8 @@ class NovelWriterApp {
     });
 
     // Add general suggestions at the end (after "---" separator) as a panel
-    const generalSuggestions = this.extractGeneralSuggestions(annotatedText);
+    const generalSuggestions = this.extractGeneralSuggestions(annotatedText, visibleSuggestions.length + 1);
+    scene.suggestions.items = [...visibleSuggestions, ...generalSuggestions];
     if (generalSuggestions.length > 0) {
       const generalPanel = document.createElement('div');
       generalPanel.className = 'suggestion-panel';
@@ -991,6 +1002,32 @@ class NovelWriterApp {
       `;
       editor.appendChild(generalPanel);
     }
+  }
+
+  normalizeSuggestionTags(responseText) {
+    let nextNumber = 1;
+    return responseText.replace(/\[S\d+:/g, () => `[S${nextNumber++}:`);
+  }
+
+  renumberVisibleInlineSuggestions(editor) {
+    return Array.from(editor.querySelectorAll('.suggestion-inline')).map((marker, index) => {
+      const number = index + 1;
+      marker.dataset.id = `s${number}`;
+      marker.dataset.number = number;
+
+      const label = marker.querySelector('.suggestion-label');
+      if (label) label.textContent = `S${number}`;
+
+      const cloned = marker.cloneNode(true);
+      cloned.querySelector('.suggestion-label')?.remove();
+      const text = cloned.textContent.replace(/^:\s*/, '').trim();
+
+      return {
+        id: `s${number}`,
+        number,
+        text
+      };
+    });
   }
 
   /**
@@ -1198,7 +1235,7 @@ class NovelWriterApp {
   /**
    * Extract general suggestions (after ---) from annotated text
    */
-  extractGeneralSuggestions(annotatedText) {
+  extractGeneralSuggestions(annotatedText, startNumber = 1) {
     if (!annotatedText || !annotatedText.includes('---')) return [];
 
     const afterSeparator = annotatedText.split('---')[1] || '';
@@ -1207,9 +1244,10 @@ class NovelWriterApp {
     let match;
 
     while ((match = regex.exec(afterSeparator)) !== null) {
+      const number = startNumber + suggestions.length;
       suggestions.push({
-        id: `s${match[1]}`,
-        number: parseInt(match[1]),
+        id: `s${number}`,
+        number,
         text: match[2].trim().replace(/\*\*([^*]+)\*\*/g, '<span class="suggestion-keyword">$1</span>')
       });
     }

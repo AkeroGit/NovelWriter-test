@@ -392,6 +392,15 @@ You are in BRAINSTORM MODE. Generate MULTIPLE OPTIONS.
 - Be clichéd — surprise the writer`
         };
 
+        if (mode?.startsWith('custom:') && context.customAgent?.prompt) {
+            return `${baseContext}
+
+## MODE: ${context.customAgent.name || 'Custom Agent'}
+Follow this custom agent instruction as your primary behavior and purpose:
+
+${context.customAgent.prompt}`;
+        }
+
         // If a specific mode is set (not auto), use that mode's instructions
         if (mode !== 'auto' && modeInstructions[mode]) {
             return `${baseContext}

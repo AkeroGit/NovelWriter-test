@@ -23,7 +23,10 @@ export class AgentPanel {
         this.panel = document.getElementById('agent-panel');
         this.drawerTab = document.getElementById('agent-drawer-tab');
         this.resizeHandle = document.getElementById('agent-resize-handle');
-        this.modeSelect = document.getElementById('agent-mode-select');
+        this.modeDropdown = document.getElementById('agent-mode-dropdown');
+        this.modeTrigger = document.getElementById('agent-mode-trigger');
+        this.modeMenu = document.getElementById('agent-mode-menu');
+        this.modeLabel = document.getElementById('agent-mode-label');
         this.historyContainer = document.getElementById('agent-history');
         this.inputField = document.getElementById('agent-input');
         this.sendBtn = document.getElementById('agent-send-btn');
@@ -42,6 +45,7 @@ export class AgentPanel {
 
         this.bindEvents();
         this.bindResizeEvents();
+        this.renderModeDropdown();
         this.loadActiveConversation();
     }
 
@@ -56,13 +60,23 @@ export class AgentPanel {
             this.drawerTab.addEventListener('click', () => this.togglePanel());
         }
 
-        // Mode change
-        if (this.modeSelect) {
-            this.modeSelect.addEventListener('change', (e) => {
-                this.currentMode = e.target.value;
-                this.updateModeIndicator();
+        // Mode menu
+        if (this.modeTrigger) {
+            this.modeTrigger.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.modeMenu?.classList.toggle('hidden');
             });
         }
+
+        if (this.modeMenu) {
+            this.modeMenu.addEventListener('click', (e) => this.handleModeMenuClick(e));
+        }
+
+        document.addEventListener('click', (e) => {
+            if (!this.modeDropdown?.contains(e.target)) {
+                this.modeMenu?.classList.add('hidden');
+            }
+        });
 
         // Send message
         if (this.sendBtn) {
@@ -209,13 +223,153 @@ export class AgentPanel {
             quick: '#22c55e',
             planning: '#f59e0b',
             chatty: '#a855f7',
-            brainstorm: '#f97316' // Orange for creative energy
+            brainstorm: '#f97316',
+            custom: '#14b8a6'
         };
 
         if (this.statusIndicator) {
-            this.statusIndicator.style.background = modeColors[this.currentMode] || modeColors.auto;
-            this.statusIndicator.title = `Mode: ${this.currentMode}`;
+            const modeKey = this.isCustomMode(this.currentMode) ? 'custom' : this.currentMode;
+            this.statusIndicator.style.background = modeColors[modeKey] || modeColors.auto;
+            this.statusIndicator.title = `Mode: ${this.getModeDisplay(this.currentMode)}`;
         }
+    }
+
+    getBuiltInModes() {
+        return [
+            { value: 'auto', label: 'Auto', icon: '◎' },
+            { value: 'quick', label: 'Quick', icon: '⚡' },
+            { value: 'planning', label: 'Planning', icon: '📋' },
+            { value: 'chatty', label: 'Chatty', icon: '💬' },
+            { value: 'brainstorm', label: 'Brainstorm', icon: '💡' }
+        ];
+    }
+
+    isCustomMode(mode) {
+        return typeof mode === 'string' && mode.startsWith('custom:');
+    }
+
+    getCustomAgentId(mode = this.currentMode) {
+        return this.isCustomMode(mode) ? mode.slice('custom:'.length) : null;
+    }
+
+    getSelectedCustomAgent() {
+        const agentId = this.getCustomAgentId();
+        return agentId ? this.app.customAgentManager?.getAgent('chat', agentId) : null;
+    }
+
+    getModeDisplay(mode) {
+        const builtIn = this.getBuiltInModes().find(item => item.value === mode);
+        if (builtIn) return builtIn.label;
+
+        const agentId = this.getCustomAgentId(mode);
+        const agent = agentId ? this.app.customAgentManager?.getAgent('chat', agentId) : null;
+        return agent?.name || 'Custom Agent';
+    }
+
+    getModeAnnouncement(mode) {
+        const builtIn = this.getBuiltInModes().find(item => item.value === mode);
+        if (builtIn && builtIn.value === 'auto') return `${builtIn.icon} ${builtIn.label}`;
+        if (builtIn && builtIn.value !== 'auto') return `${builtIn.icon} ${builtIn.label} Mode`;
+
+        const agentId = this.getCustomAgentId(mode);
+        const agent = agentId ? this.app.customAgentManager?.getAgent('chat', agentId) : null;
+        return agent ? `${agent.name} Mode` : 'Custom Agent Mode';
+    }
+
+    setMode(mode) {
+        this.currentMode = mode;
+        if (this.modeLabel) {
+            this.modeLabel.textContent = this.getModeAnnouncement(mode).replace(/\sMode$/, '');
+        }
+        this.updateModeIndicator();
+        this.modeMenu?.classList.add('hidden');
+    }
+
+    handleModeMenuClick(e) {
+        const editBtn = e.target.closest('[data-agent-action]');
+        if (editBtn) {
+            e.preventDefault();
+            e.stopPropagation();
+            this.handleCustomAgentAction(editBtn.dataset.agentAction, editBtn.dataset.agentId);
+            return;
+        }
+
+        const option = e.target.closest('[data-mode]');
+        if (option) {
+            this.setMode(option.dataset.mode);
+            return;
+        }
+
+        if (e.target.closest('[data-add-custom-agent]')) {
+            this.app.customAgentManager?.open('chat', null, (saved) => {
+                this.renderModeDropdown();
+                this.setMode(`custom:${saved.id}`);
+            });
+        }
+    }
+
+    handleCustomAgentAction(action, agentId) {
+        const manager = this.app.customAgentManager;
+        const agent = manager?.getAgent('chat', agentId);
+        if (!agent) return;
+
+        if (action === 'edit') {
+            manager.open('chat', agent, (saved) => {
+                this.renderModeDropdown();
+                this.setMode(`custom:${saved.id}`);
+            });
+            return;
+        }
+
+        if (action === 'delete') {
+            if (!confirm(`Delete custom agent "${agent.name}"?`)) return;
+            manager.deleteAgent('chat', agentId);
+            if (this.currentMode === `custom:${agentId}`) {
+                this.currentMode = 'auto';
+            }
+            this.renderModeDropdown();
+            this.setMode(this.currentMode);
+        }
+    }
+
+    renderModeDropdown() {
+        if (!this.modeMenu) return;
+
+        const customAgents = this.app.customAgentManager?.getAgents('chat') || [];
+        if (this.isCustomMode(this.currentMode) && !this.getSelectedCustomAgent()) {
+            this.currentMode = 'auto';
+        }
+
+        const builtIns = this.getBuiltInModes().map(mode => `
+            <button class="agent-mode-option${this.currentMode === mode.value ? ' active' : ''}" type="button" data-mode="${mode.value}">
+                <span class="agent-mode-option-label"><span class="agent-mode-option-icon">${mode.icon}</span>${this.escapeHtml(mode.label)}</span>
+            </button>
+        `).join('');
+
+        const custom = customAgents.map(agent => {
+            const mode = `custom:${agent.id}`;
+            return `
+                <div class="agent-mode-option-row${this.currentMode === mode ? ' active' : ''}">
+                    <button class="agent-mode-option custom-agent-mode-option" type="button" data-mode="${this.escapeAttribute(mode)}">
+                        <span class="agent-mode-option-label"><span class="agent-mode-option-icon">✦</span>${this.escapeHtml(agent.name)}</span>
+                    </button>
+                    <button class="agent-mode-option-menu" type="button" title="Edit custom agent" data-agent-action="edit" data-agent-id="${this.escapeAttribute(agent.id)}">Edit</button>
+                    <button class="agent-mode-option-menu danger compact" type="button" title="Delete custom agent" data-agent-action="delete" data-agent-id="${this.escapeAttribute(agent.id)}">×</button>
+                </div>
+            `;
+        }).join('');
+
+        this.modeMenu.innerHTML = `
+            ${builtIns}
+            ${customAgents.length ? '<div class="agent-mode-divider"></div>' : ''}
+            ${custom}
+            <div class="agent-mode-divider"></div>
+            <button class="agent-mode-option agent-mode-add" type="button" data-add-custom-agent>
+                <span class="agent-mode-option-label"><span class="agent-mode-option-icon">+</span>Add Custom Agent</span>
+            </button>
+        `;
+
+        this.setMode(this.currentMode);
     }
 
     /**
@@ -314,7 +468,7 @@ export class AgentPanel {
 
         // Remove explicit mode prefix if user typed one manually
         let cleanInput = userInput
-            .replace(/^\[(quick|planning|chat|chatty)\]\s*/i, '');
+            .replace(/^\[(quick|planning|chat|chatty|brainstorm)\]\s*/i, '');
 
         // Add user message to history (with image thumbnail if attached)
         let savedImageFilename = null;
@@ -346,13 +500,7 @@ export class AgentPanel {
         if (selectedMode === 'auto') {
             this.addMessage('mode', 'AI is analyzing your request...');
         } else {
-            const modeNames = {
-                quick: '⚡ Quick Mode',
-                planning: '📋 Planning Mode',
-                chatty: '💬 Chatty Mode',
-                brainstorm: '💡 Brainstorm Mode'
-            };
-            this.addMessage('mode', `Using ${modeNames[selectedMode]}`);
+            this.addMessage('mode', `Using ${this.getModeAnnouncement(selectedMode)}`);
         }
 
         // Show typing indicator
@@ -395,7 +543,8 @@ export class AgentPanel {
             let systemPrompt = this.app.aiService.buildSystemPrompt(selectedMode, {
                 title: summary.title,
                 author: summary.author,
-                projectType: this.app.state?.metadata?.projectType || 'novel'
+                projectType: this.app.state?.metadata?.projectType || 'novel',
+                customAgent: this.getSelectedCustomAgent()
             });
 
             // Append vision instructions when image is attached
@@ -478,7 +627,7 @@ Do NOT say you cannot see images — you have full vision capability for this me
 
                     // Parse and announce AI's declared mode (only once, from first chunk)
                     if (!modeAnnounced && selectedMode === 'auto') {
-                        const modeMatch = accumulated.match(/^\[MODE:\s*(quick|planning|chatty)\]/i);
+                        const modeMatch = accumulated.match(/^\[MODE:\s*(quick|planning|chatty|brainstorm)\]/i);
                         if (modeMatch) {
                             aiDeclaredMode = modeMatch[1].toLowerCase();
                             modeAnnounced = true;
@@ -495,7 +644,7 @@ Do NOT say you cannot see images — you have full vision capability for this me
                     }
 
                     // Update message with content and thinking
-                    const displayContent = accumulated.replace(/^\[MODE:\s*(quick|planning|chatty)\]\s*/i, '');
+                    const displayContent = accumulated.replace(/^\[MODE:\s*(quick|planning|chatty|brainstorm)\]\s*/i, '');
                     this.updateMessage(typingId, displayContent, fullThinking);
                 }
             );
@@ -658,7 +807,8 @@ Please provide your suggestion. Keep it natural and fitting to the story.`;
             const systemPrompt = this.app.aiService.buildSystemPrompt('quick', {
                 title: this.app.state.metadata.title,
                 author: this.app.state.metadata.author,
-                projectType: this.app.state?.metadata?.projectType || 'novel'
+                projectType: this.app.state?.metadata?.projectType || 'novel',
+                customAgent: this.getSelectedCustomAgent()
             }) + '\n\n--- MANUSCRIPT CONTEXT ---\n\n' + fullContext;
 
             // Prepare messages
@@ -676,7 +826,7 @@ Please provide your suggestion. Keep it natural and fitting to the story.`;
                     fullResponse = accumulated;
                     fullThinking = accumulatedThinking || '';
                     // Strip mode prefix if present
-                    const displayContent = accumulated.replace(/^\[MODE:\s*(quick|planning|chatty)\]\s*/i, '');
+                    const displayContent = accumulated.replace(/^\[MODE:\s*(quick|planning|chatty|brainstorm)\]\s*/i, '');
                     this.updateMessage(typingId, displayContent, fullThinking);
                 }
             );
@@ -987,6 +1137,19 @@ Please provide your suggestion. Keep it natural and fitting to the story.`;
         return formatted;
     }
 
+    escapeHtml(value) {
+        return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    escapeAttribute(value) {
+        return this.escapeHtml(value);
+    }
+
     /**
      * Update the status indicator
      */
@@ -994,7 +1157,7 @@ Please provide your suggestion. Keep it natural and fitting to the story.`;
         if (!this.statusIndicator) return;
 
         const statusMap = {
-            ready: { class: 'ready', title: `Ready (${mode || this.currentMode})` },
+            ready: { class: 'ready', title: `Ready (${this.getModeDisplay(mode || this.currentMode)})` },
             thinking: { class: 'thinking', title: 'Thinking...' },
             error: { class: 'error', title: 'Error occurred' }
         };

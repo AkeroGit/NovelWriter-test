@@ -132,18 +132,24 @@ You're always late."
 
         if (!scene?.suggestions?.items?.length) return;
 
-        const suggestions = scene.suggestions.items;
+        const suggestions = scene.suggestions.items.map((suggestion, index) => ({
+            ...suggestion,
+            id: `s${index + 1}`,
+            number: index + 1
+        }));
+        scene.suggestions.items = suggestions;
         const typeLabels = {
             expand: 'Expand', shorten: 'Shorten', dialogue: 'Dialogue',
             sensory: 'Sensory', grammar: 'Grammar', prose: 'Prose', review: 'Review',
             anchor: 'Anchor'
         };
+        const suggestionLabel = scene.suggestions.typeLabel || typeLabels[scene.suggestions.type] || 'Script';
 
         const panel = document.createElement('div');
         panel.className = 'screenplay-suggestions-panel';
         panel.innerHTML = `
             <div class="suggestions-header">
-                <span class="suggestions-title">🤖 ${typeLabels[scene.suggestions.type] || 'Script'} Suggestions</span>
+                <span class="suggestions-title">🤖 ${suggestionLabel} Suggestions</span>
                 <span class="suggestions-count">${suggestions.length} suggestion${suggestions.length > 1 ? 's' : ''}</span>
                 <button class="suggestions-toggle" title="Toggle panel">▼</button>
             </div>

@@ -631,16 +631,8 @@ export class TreeNav {
                 const hasSuggestions = scene?.suggestions?.items?.length > 0;
                 items = [
                     {
-                        label: '🤖 Novel Agent', submenu: [
-                            { label: '📝 Expand', onClick: () => this.generateSuggestions(id, parent, grandparent, 'expand') },
-                            { label: '✂️ Shorten', onClick: () => this.generateSuggestions(id, parent, grandparent, 'shorten') },
-                            { label: '💬 Improve Dialogue', onClick: () => this.generateSuggestions(id, parent, grandparent, 'dialogue') },
-                            { label: '🌿 Add Sensory Details', onClick: () => this.generateSuggestions(id, parent, grandparent, 'sensory') },
-                            { label: '✏️ Grammar Check', onClick: () => this.generateSuggestions(id, parent, grandparent, 'grammar') },
-                            { label: '✨ Prose Improvement', onClick: () => this.generateSuggestions(id, parent, grandparent, 'prose') },
-                            { label: '🔍 General Review', onClick: () => this.generateSuggestions(id, parent, grandparent, 'review') },
-                            { label: '⚓ Anchor Dialogue', onClick: () => this.generateSuggestions(id, parent, grandparent, 'anchor') }
-                        ]
+                        label: 'Novel Agent',
+                        submenu: this.getNovelAgentMenuItems(id, parent, grandparent)
                     },
                     ...(hasSuggestions ? [{ label: '🗑️ Clear All Suggestions', onClick: () => this.clearSuggestions(id, parent, grandparent) }] : []),
                     { divider: true },
@@ -699,6 +691,72 @@ export class TreeNav {
         }
 
         if (items.length) this.contextMenu.show(x, y, items);
+    }
+
+    getNovelAgentMenuItems(sceneId, chapterId, partId) {
+        const builtIns = [
+            { label: '📝 Expand', onClick: () => this.generateSuggestions(sceneId, chapterId, partId, 'expand') },
+            { label: '✂️ Shorten', onClick: () => this.generateSuggestions(sceneId, chapterId, partId, 'shorten') },
+            { label: '💬 Improve Dialogue', onClick: () => this.generateSuggestions(sceneId, chapterId, partId, 'dialogue') },
+            { label: '🌿 Add Sensory Details', onClick: () => this.generateSuggestions(sceneId, chapterId, partId, 'sensory') },
+            { label: '✏️ Grammar Check', onClick: () => this.generateSuggestions(sceneId, chapterId, partId, 'grammar') },
+            { label: '✨ Prose Improvement', onClick: () => this.generateSuggestions(sceneId, chapterId, partId, 'prose') },
+            { label: '🔍 General Review', onClick: () => this.generateSuggestions(sceneId, chapterId, partId, 'review') },
+            { label: '⚓ Anchor Dialogue', onClick: () => this.generateSuggestions(sceneId, chapterId, partId, 'anchor') }
+        ];
+
+        const manager = this.app.customAgentManager;
+        const customAgents = manager?.getAgents('novel') || [];
+        const customItems = customAgents.map(agent => ({
+            label: `* ${agent.name}`,
+            onClick: () => this.generateSuggestions(sceneId, chapterId, partId, `custom:${agent.id}`),
+            actions: [
+                {
+                    label: 'Edit',
+                    title: 'Edit custom agent',
+                    onClick: () => manager?.open('novel', agent)
+                },
+                {
+                    label: '×',
+                    title: 'Delete custom agent',
+                    danger: true,
+                    onClick: () => {
+                        if (!confirm(`Delete custom agent "${agent.name}"?`)) return;
+                        manager?.deleteAgent('novel', agent.id);
+                    }
+                }
+            ]
+        }));
+
+        return [
+            ...builtIns,
+            { divider: true },
+            ...customItems,
+            ...(customItems.length ? [{ divider: true }] : []),
+            {
+                label: '+ Add Custom Agent',
+                onClick: () => manager?.open('novel')
+            }
+        ];
+    }
+
+    showNovelAgentActions(x, y, agent) {
+        const manager = this.app.customAgentManager;
+        if (!manager) return;
+
+        this.contextMenu.show(x, y, [
+            {
+                label: 'Edit Custom Agent',
+                onClick: () => manager.open('novel', agent)
+            },
+            {
+                label: 'Delete Custom Agent',
+                onClick: () => {
+                    if (!confirm(`Delete custom agent "${agent.name}"?`)) return;
+                    manager.deleteAgent('novel', agent.id);
+                }
+            }
+        ]);
     }
 
     // ========== SELECTION ==========
@@ -2102,6 +2160,16 @@ DO NOT suggest "he said" / "she said". Suggest GRRM-style anchors like:
             anchor: 'Anchor Dialogue'
         };
 
+        const customAgentId = suggestionType.startsWith('custom:') ? suggestionType.slice('custom:'.length) : null;
+        const customAgent = customAgentId ? this.app.customAgentManager?.getAgent('novel', customAgentId) : null;
+        if (customAgentId && !customAgent) {
+            alert('Custom agent not found. It may have been deleted.');
+            return;
+        }
+
+        const activePrompt = customAgent?.prompt || prompts[suggestionType];
+        const activeLabel = customAgent?.name || typeLabels[suggestionType] || 'Custom Agent';
+
         let systemPrompt, userPrompt;
 
         if (this.app.isScreenplay()) {
@@ -2110,10 +2178,12 @@ DO NOT suggest "he said" / "she said". Suggest GRRM-style anchors like:
 
 INSTRUCTIONS:
 1. DO NOT modify or repeat the original script text
-2. Provide suggestions as a numbered list (S1, S2, S3, etc.)
-3. Each suggestion should reference a specific line or element
-4. Focus on: visual storytelling, dialogue subtext, pacing, formatting
-5. Mark key words with **asterisks** for emphasis
+2. Provide ONLY the highest-impact suggestions as a numbered list (S1, S2, S3, etc.)
+3. Maximum 8 suggestions total. Fewer is better if the scene only has a few real issues.
+4. Each suggestion should reference a specific line or element
+5. Focus on meaningful improvements to visual storytelling, dialogue subtext, pacing, or formatting
+6. Do NOT invent flaws. Do NOT comment on every line. Ignore minor preferences unless they materially improve the scene.
+7. Mark key words with **asterisks** for emphasis
 
 OUTPUT FORMAT:
 Just provide a numbered list of suggestions. Example:
@@ -2122,13 +2192,13 @@ Just provide a numbered list of suggestions. Example:
 [S2: Character introduction is too "on-the-nose". Consider showing SARAH's nervousness through **action** rather than dialogue.]
 [S3: The dialogue exchange feels rushed. Add a **beat** or action line between their responses.]
 
-Your task: ${prompts[suggestionType]}`;
+Your task: ${activePrompt}`;
 
-            userPrompt = `Analyze this screenplay scene for "${typeLabels[suggestionType]}":
+            userPrompt = `Analyze this screenplay scene for "${activeLabel}":
 
 ${content}
 
-Provide 4-6 suggestions as a numbered list. Focus on professional screenplay standards.`;
+Provide at most 8 high-impact suggestions as a numbered list. If there are fewer genuine issues, give fewer suggestions. Focus on professional screenplay standards.`;
 
         } else {
             // NOVEL MODE: Inline + bottom suggestions
@@ -2138,11 +2208,15 @@ INSTRUCTIONS:
 1. Return the ORIGINAL text with suggestions inserted
 2. Use format: [S1: note], [S2: note], etc.
 3. Number by importance: S1 = most impactful
-4. In your suggestions, mark key words with **asterisks** for emphasis
+4. Maximum 8 suggestions total across the whole scene
+5. Only suggest changes for genuine, high-impact issues. Do NOT force a note after every sentence or paragraph.
+6. Do NOT invent flaws. If a line already works, leave it alone.
+7. In your suggestions, mark key words with **asterisks** for emphasis
 
 TWO TYPES OF SUGGESTIONS:
 - INLINE: Insert after the specific sentence it applies to
 - GENERAL: Put at the very end after "---" for overall pacing, structure, or theme feedback
+- Use inline notes sparingly. Prefer the most important moments over broad coverage.
 
 EXAMPLE OUTPUT:
 John walked home. [S1: Describe his **emotional state** or **physical weariness**.] The night was dark. [S2: Add **sensory details** - sounds, smells.]
@@ -2150,15 +2224,16 @@ John walked home. [S1: Describe his **emotional state** or **physical weariness*
 ---
 [S3: Consider adding **internal monologue** to increase reader connection.]
 
-Your task: ${prompts[suggestionType]}`;
+Your task: ${activePrompt}`;
 
-            userPrompt = `Analyze this scene for "${typeLabels[suggestionType]}":
+            userPrompt = `Analyze this scene for "${activeLabel}":
 
 ${content}
 
-Provide 4-6 suggestions:
-- Inline suggestions: right after the sentence they apply to
+Provide at most 8 high-impact suggestions:
+- Inline suggestions: only after the sentence they directly apply to
 - General suggestions: at the end after "---" for overall feedback
+- If there are fewer than 8 worthwhile issues, give fewer than 8 suggestions
 
 Return the full text with suggestions:`;
         }
@@ -2176,7 +2251,7 @@ Return the full text with suggestions:`;
             loadingOverlay.innerHTML = `
                 <div class="suggestion-generating">
                     <h2>🤖 Analyzing Scene...</h2>
-                    <p>${typeLabels[suggestionType]} suggestions for "${scene.title}"</p>
+                    <p>${activeLabel} suggestions for "${scene.title}"</p>
                     <div class="loading-spinner"></div>
                 </div>
             `;
@@ -2188,7 +2263,7 @@ Return the full text with suggestions:`;
             editor.innerHTML = `
                 <div class="suggestion-generating">
                     <h2>🤖 Analyzing Scene...</h2>
-                    <p>${typeLabels[suggestionType]} suggestions for "${scene.title}"</p>
+                    <p>${activeLabel} suggestions for "${scene.title}"</p>
                     <div class="loading-spinner"></div>
                 </div>
             `;
@@ -2205,6 +2280,7 @@ Return the full text with suggestions:`;
                 messages,
                 (chunk, accumulated) => { fullResponse = accumulated; }
             );
+            fullResponse = this.normalizeSuggestionTags(fullResponse);
 
             // DEBUG: Log raw AI response
             console.log('=== RAW AI RESPONSE ===');
@@ -2222,6 +2298,7 @@ Return the full text with suggestions:`;
             // Store BOTH the annotated text AND individual suggestions
             scene.suggestions = {
                 type: suggestionType,
+                typeLabel: activeLabel,
                 annotatedText: fullResponse, // Full text with inline [S#: ...] blocks
                 items: suggestions,
                 generatedAt: new Date().toISOString()
@@ -2268,6 +2345,11 @@ Return the full text with suggestions:`;
         }
 
         return suggestions;
+    }
+
+    normalizeSuggestionTags(responseText) {
+        let nextNumber = 1;
+        return responseText.replace(/\[S\d+:/g, () => `[S${nextNumber++}:`);
     }
 
     clearSuggestions(sceneId, chapterId, partId) {
