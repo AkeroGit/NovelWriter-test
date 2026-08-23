@@ -3,6 +3,8 @@ import fs from 'fs';
 import path from 'path';
 
 export default defineConfig({
+    base: '/NovelWriter-test/', 
+    
     plugins: [
         {
             name: 'auto-create-images-folder',
